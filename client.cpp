@@ -9,8 +9,9 @@
 #include <queue>
 #include <mutex>
 #include <condition_variable>
+
 const int SEND_DELAY_S = 10;
-const int TIMEOUT_MS = 3000; // Timeout for retransmission in milliseconds
+const int TIMEOUT_MS = 10000; // Timeout for retransmission in milliseconds
 
 // Define the packet structure
 struct Packet
@@ -22,6 +23,7 @@ struct Packet
     uint16_t payload_length;
     uint8_t flags;
     uint16_t checksum;
+
     char payload[1024]; // Example payload size
 };
 
@@ -44,9 +46,15 @@ uint16_t calculate_checksum(const Packet &packet)
     return ~sum;
 }
 
-// Function to send a packet
-bool send_packet(int sock, const sockaddr_in &dest_addr, const Packet &packet)
+// Shared resources for acknowledgment handling
+std::queue<uint32_t> ack_queue;
+std::mutex ack_mutex;
+std::condition_variable ack_cv;
+
+// Function to send a packet and wait for acknowledgment
+bool send_packet(int sock, const sockaddr_in &dest_addr, Packet &packet)
 {
+    // Send the packet
     int sendResult = sendto(sock, &packet, sizeof(packet), 0, (const sockaddr *)&dest_addr, sizeof(dest_addr));
     if (sendResult < 0)
     {
@@ -54,13 +62,95 @@ bool send_packet(int sock, const sockaddr_in &dest_addr, const Packet &packet)
         return false;
     }
     std::cout << "Sent packet with payload: " << packet.payload << std::endl;
-    return true;
-}
 
-// Shared resources for acknowledgment handling
-std::queue<uint32_t> ack_queue;
-std::mutex ack_mutex;
-std::condition_variable ack_cv;
+    // Wait for acknowledgment
+    auto start = std::chrono::steady_clock::now();
+    bool ack_received = false;
+
+    std::unique_lock<std::mutex> lock(ack_mutex);
+    while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(TIMEOUT_MS))
+    {
+        // Check for acknowledgment in the queue
+        if (!ack_queue.empty())
+        {
+            uint32_t ack_num = ack_queue.front();
+            ack_queue.pop();
+            if (ack_num == packet.seq_num)
+            {
+                ack_received = true;
+                break;
+            }
+        }
+        ack_cv.wait_for(lock, std::chrono::milliseconds(10));
+    }
+
+    if (!ack_received)
+    {
+        std::cerr << "No acknowledgment received, retransmitting..." << std::endl;
+        return false; // Indicate that retransmission is needed
+    }
+    else
+    {
+        std::cout << "Ack received" << std::endl;
+        return true; // Acknowledgment received
+    }
+}
+bool create_and_send_packet(int sock, const sockaddr_in &dest_addr, uint32_t &seq_num,
+                            const std::vector<std::string> &keys,
+                            const std::vector<std::string> &values,
+                            const std::vector<uint8_t> &data_types)
+{
+    if (keys.size() != values.size() || keys.size() != data_types.size())
+    {
+        std::cerr << "Mismatch in size of keys, values, or data types" << std::endl;
+        return false;
+    }
+
+    // Create a packet to send
+    Packet packet;
+    packet.version = 1;
+    packet.type = 1; // Type 1 for data packet
+    packet.seq_num = seq_num++;
+    packet.ack_num = 0;
+
+    size_t offset = 0;
+
+    // Prepare the payload
+    for (size_t i = 0; i < keys.size(); ++i)
+    {
+        size_t key_length = std::min(static_cast<size_t>(8), keys[i].length());
+        size_t value_length = values[i].length();
+
+        // Ensure payload does not exceed maximum size
+        if (offset + key_length + 2 + value_length > sizeof(packet.payload))
+        {
+            std::cerr << "Payload size exceeds maximum allowed size" << std::endl;
+            return false;
+        }
+
+        // Copy key
+        std::memcpy(packet.payload + offset, keys[i].c_str(), key_length);
+        packet.payload[offset + key_length] = '\0';
+        offset += 8;
+
+        // Copy value length (1 byte)
+        packet.payload[offset++] = static_cast<uint8_t>(value_length);
+
+        // Copy data type (1 byte)
+        packet.payload[offset++] = data_types[i];
+
+        // Copy value
+        std::memcpy(packet.payload + offset, values[i].c_str(), value_length);
+        offset += value_length;
+    }
+
+    packet.payload_length = offset; // Set actual payload length
+    packet.flags = 0;
+    packet.checksum = calculate_checksum(packet);
+
+    // Send the packet
+    return send_packet(sock, dest_addr, packet);
+}
 
 // Function to receive packets in a separate thread
 void receive_packets(int sock, uint32_t &expected_seq_num)
@@ -82,7 +172,33 @@ void receive_packets(int sock, uint32_t &expected_seq_num)
         {
             char src_ip[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &recvAddr.sin_addr, src_ip, INET_ADDRSTRLEN);
-            std::cout << "Received valid packet from " << src_ip << ":" << ntohs(recvAddr.sin_port) << " with payload: " << recvPacket.payload << std::endl;
+            std::cout << "Received valid packet from " << src_ip << ":" << ntohs(recvAddr.sin_port) << std::endl;
+
+            // Handle payload
+            size_t offset = 0;
+            while (offset < recvPacket.payload_length)
+            {
+                // Extract key (first 8 bytes)
+                char key[8] = {0};
+                std::memcpy(key, recvPacket.payload + offset, 8);
+
+                offset += 8;
+
+                // Extract value length (next byte)
+                uint8_t value_length = recvPacket.payload[offset++];
+
+                // Extract data type (next byte)
+                uint8_t data_type = recvPacket.payload[offset++];
+
+                // Extract value (value_length bytes)
+                std::string value(reinterpret_cast<char *>(recvPacket.payload + offset), value_length);
+                offset += value_length;
+
+                std::cout << "Payload details:" << std::endl;
+                std::cout << "Key: " << key << std::endl;
+                std::cout << "Value: " << value << std::endl;
+                std::cout << "Data type: " << static_cast<int>(data_type) << std::endl;
+            }
 
             // Handle acknowledgment
             if (recvPacket.type == 1) // Type 1 for data packet
@@ -101,12 +217,12 @@ void receive_packets(int sock, uint32_t &expected_seq_num)
             }
 
             // Notify sender about the received acknowledgment
-            else if (recvPacket.type == 2) // Type 2 for acknowledgment
+            if (recvPacket.type == 2)
             {
                 std::lock_guard<std::mutex> lock(ack_mutex);
                 ack_queue.push(recvPacket.ack_num);
+                ack_cv.notify_one();
             }
-            ack_cv.notify_one();
 
             // Update expected sequence number
             expected_seq_num = recvPacket.seq_num + 1;
@@ -158,55 +274,15 @@ int main()
     // Loop to send packets
     while (true)
     {
-        // Create a packet to send
-        Packet packet;
-        packet.version = 1;
-        packet.type = 1; // Type 1 for data packet
-        packet.seq_num = seq_num++;
-        packet.ack_num = 0;
-        const char *msg = "Hello from sender!";
-        strncpy(packet.payload, msg, sizeof(packet.payload));
-        packet.payload_length = strlen(msg);
-        packet.flags = 0;
-        packet.checksum = calculate_checksum(packet);
+        std::vector<std::string> keys = {"key1", "key2"};
+        std::vector<std::string> values = {"value1", "value2"};
+        std::vector<uint8_t> data_types = {1, 2}; // Example data types
 
-        // Send the packet
-        if (!send_packet(sock, sendAddr, packet))
+        // Create and send the packet
+        if (!create_and_send_packet(sock, sendAddr, seq_num, keys, values, data_types))
         {
-            close(sock);
-            recv_thread.join(); // Wait for the receive thread to finish
-            return 1;
-        }
-
-        // Wait for acknowledgment with retransmission logic
-        auto start = std::chrono::steady_clock::now();
-        bool ack_received = false;
-
-        std::unique_lock<std::mutex> lock(ack_mutex);
-        while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(TIMEOUT_MS))
-        {
-            // Check for acknowledgment in the queue
-            if (!ack_queue.empty())
-            {
-                uint32_t ack_num = ack_queue.front();
-                ack_queue.pop();
-                if (ack_num == packet.seq_num)
-                {
-                    ack_received = true;
-                    break;
-                }
-            }
-            ack_cv.wait_for(lock, std::chrono::milliseconds(10));
-        }
-
-        if (!ack_received)
-        {
-            std::cerr << "No acknowledgment received, retransmitting..." << std::endl;
-            continue; // Retransmit
-        }
-        else
-        {
-            std::cout << "Ack received" << std::endl;
+            std::cerr << "Error creating or sending packet, retrying..." << std::endl;
+            continue; // Retry sending the packet
         }
 
         // Pause before the next iteration
