@@ -4,6 +4,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <cstring>
+#include <thread>
 
 // Define the packet structure
 struct Packet
@@ -50,29 +51,32 @@ bool send_packet(int sock, const sockaddr_in &dest_addr, const Packet &packet)
     return true;
 }
 
-// Function to receive a packet
-bool receive_packet(int sock, Packet &packet, sockaddr_in &src_addr)
+// Function to receive packets in a separate thread
+void receive_packets(int sock)
 {
-    socklen_t src_addr_len = sizeof(src_addr);
-    int bytesReceived = recvfrom(sock, &packet, sizeof(packet), 0, (sockaddr *)&src_addr, &src_addr_len);
-    if (bytesReceived < 0)
+    while (true)
     {
-        std::cerr << "Error receiving data" << std::endl;
-        return false;
-    }
+        Packet recvPacket;
+        sockaddr_in recvAddr;
+        socklen_t recvAddrLen = sizeof(recvAddr);
+        int bytesReceived = recvfrom(sock, &recvPacket, sizeof(recvPacket), 0, (sockaddr *)&recvAddr, &recvAddrLen);
+        if (bytesReceived < 0)
+        {
+            std::cerr << "Error receiving data" << std::endl;
+            continue;
+        }
 
-    // Check the checksum of the received packet
-    if (packet.checksum == calculate_checksum(packet))
-    {
-        char src_ip[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &src_addr.sin_addr, src_ip, INET_ADDRSTRLEN);
-        std::cout << "Received valid packet from " << src_ip << ":" << ntohs(src_addr.sin_port) << " with payload: " << packet.payload << std::endl;
-        return true;
-    }
-    else
-    {
-        std::cerr << "Checksum error!" << std::endl;
-        return false;
+        // Check the checksum of the received packet
+        if (recvPacket.checksum == calculate_checksum(recvPacket))
+        {
+            char src_ip[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &recvAddr.sin_addr, src_ip, INET_ADDRSTRLEN);
+            std::cout << "Received valid packet from " << src_ip << ":" << ntohs(recvAddr.sin_port) << " with payload: " << recvPacket.payload << std::endl;
+        }
+        else
+        {
+            std::cerr << "Checksum error!" << std::endl;
+        }
     }
 }
 
@@ -106,10 +110,13 @@ int main()
     sendAddr.sin_port = htons(54000); // Use a different port for sending
     inet_pton(AF_INET, "127.0.0.1", &sendAddr.sin_addr);
 
+    // Start the thread for receiving packets
+    std::thread recv_thread(receive_packets, sock);
+
     // Sequence number for outgoing packets
     uint32_t seq_num = 0;
 
-    // Loop to send and receive packets
+    // Loop to send packets
     while (true)
     {
         // Create a packet to send
@@ -128,21 +135,16 @@ int main()
         if (!send_packet(sock, sendAddr, packet))
         {
             close(sock);
+            recv_thread.join(); // Wait for the receive thread to finish
             return 1;
-        }
-
-        // Receive a packet
-        Packet recvPacket;
-        sockaddr_in recvAddr;
-        if (!receive_packet(sock, recvPacket, recvAddr))
-        {
-            continue;
         }
 
         // Pause before the next iteration
         sleep(1);
     }
 
+    // Clean up and close the socket
     close(sock);
+    recv_thread.join(); // Wait for the receive thread to finish
     return 0;
 }
