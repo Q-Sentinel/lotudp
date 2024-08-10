@@ -37,6 +37,45 @@ uint16_t calculate_checksum(const Packet &packet)
     return ~sum;
 }
 
+// Function to send a packet
+bool send_packet(int sock, const sockaddr_in &dest_addr, const Packet &packet)
+{
+    int sendResult = sendto(sock, &packet, sizeof(packet), 0, (const sockaddr *)&dest_addr, sizeof(dest_addr));
+    if (sendResult < 0)
+    {
+        std::cerr << "Error sending data" << std::endl;
+        return false;
+    }
+    std::cout << "Sent packet with payload: " << packet.payload << std::endl;
+    return true;
+}
+
+// Function to receive a packet
+bool receive_packet(int sock, Packet &packet, sockaddr_in &src_addr)
+{
+    socklen_t src_addr_len = sizeof(src_addr);
+    int bytesReceived = recvfrom(sock, &packet, sizeof(packet), 0, (sockaddr *)&src_addr, &src_addr_len);
+    if (bytesReceived < 0)
+    {
+        std::cerr << "Error receiving data" << std::endl;
+        return false;
+    }
+
+    // Check the checksum of the received packet
+    if (packet.checksum == calculate_checksum(packet))
+    {
+        char src_ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &src_addr.sin_addr, src_ip, INET_ADDRSTRLEN);
+        std::cout << "Received valid packet from " << src_ip << ":" << ntohs(src_addr.sin_port) << " with payload: " << packet.payload << std::endl;
+        return true;
+    }
+    else
+    {
+        std::cerr << "Checksum error!" << std::endl;
+        return false;
+    }
+}
+
 int main()
 {
     // Create a UDP socket
@@ -86,35 +125,18 @@ int main()
         packet.checksum = calculate_checksum(packet);
 
         // Send the packet
-        int sendResult = sendto(sock, &packet, sizeof(packet), 0, (sockaddr *)&sendAddr, sizeof(sendAddr));
-        if (sendResult < 0)
+        if (!send_packet(sock, sendAddr, packet))
         {
-            std::cerr << "Error sending data" << std::endl;
             close(sock);
             return 1;
         }
-        std::cout << "Sent packet with payload: " << packet.payload << std::endl;
 
         // Receive a packet
         Packet recvPacket;
         sockaddr_in recvAddr;
-        socklen_t recvAddrLen = sizeof(recvAddr);
-
-        int bytesReceived = recvfrom(sock, &recvPacket, sizeof(recvPacket), 0, (sockaddr *)&recvAddr, &recvAddrLen);
-        if (bytesReceived < 0)
+        if (!receive_packet(sock, recvPacket, recvAddr))
         {
-            std::cerr << "Error receiving data" << std::endl;
             continue;
-        }
-
-        // Check the checksum of the received packet
-        if (recvPacket.checksum == calculate_checksum(recvPacket))
-        {
-            std::cout << "Received valid packet with payload: " << recvPacket.payload << std::endl;
-                }
-        else
-        {
-            std::cerr << "Checksum error!" << std::endl;
         }
 
         // Pause before the next iteration
