@@ -26,13 +26,13 @@ $(SERVER): $(SERVER_OBJ)
 $(CLIENT): $(CLIENT_OBJ)
 	$(CXX) $(CXXFLAGS) -o $@ $(CLIENT_OBJ) $(LDFLAGS)
 
-# Compile server source file into object file
-$(SERVER_OBJ): $(SERVER_SRC)
-	$(CXX) $(CXXFLAGS) -c $(SERVER_SRC) -o $(SERVER_OBJ)
+# # Compile server source file into object file
+# $(SERVER_OBJ): $(SERVER_SRC)
+# 	$(CXX) $(CXXFLAGS) -c $(SERVER_SRC) -o $(SERVER_OBJ)
 
-# Compile client source file into object file
-$(CLIENT_OBJ): $(CLIENT_SRC)
-	$(CXX) $(CXXFLAGS) -c $(CLIENT_SRC) -o $(CLIENT_OBJ)
+# # Compile client source file into object file
+# $(CLIENT_OBJ): $(CLIENT_SRC)
+# 	$(CXX) $(CXXFLAGS) -c $(CLIENT_SRC) -o $(CLIENT_OBJ)
 
 # Clean up build files
 clean:
