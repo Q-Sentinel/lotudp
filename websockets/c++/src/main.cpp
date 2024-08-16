@@ -56,8 +56,10 @@ int main()
         sockaddr_in addr;
         addr.sin_family = AF_INET;
         addr.sin_port = htons(54000);
-        inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-
+        // for local host
+        // inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+        // for all
+        inet_pton(AF_INET, "0.0.0.0", &addr.sin_addr);
         if (::bind(sock, (sockaddr *)&addr, sizeof(addr)) < 0)
         {
             std::cerr << "Error binding socket" << std::endl;
