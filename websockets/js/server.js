@@ -9,6 +9,10 @@ ws.onopen = () => {
 ws.onmessage = (event) => {
     const message = JSON.parse(event.data);
     console.log('Received update:', message);
+    console.log('Received update:', message.message);
+
+    const updatesDiv = document.getElementById('updates');
+    updatesDiv.textContent = `Received update: ${message.message}`;
 };
 
 // To update the topic
