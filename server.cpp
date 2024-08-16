@@ -9,6 +9,9 @@
 #include <queue>
 #include <mutex>
 #include <condition_variable>
+#include <unordered_map>
+#include <list>
+#include <string>
 
 const int SEND_DELAY_S = 10;
 const int TIMEOUT_MS = 10000; // Timeout for retransmission in milliseconds
@@ -23,10 +26,29 @@ struct Packet
     uint16_t payload_length;
     uint8_t flags;
     uint16_t checksum;
-
+    char topic[32];
     char payload[1024]; // Example payload size
 };
+std::unordered_map<std::string, std::list<std::string>> topic_table; // Hash table for topics
+std::mutex table_mutex;
 
+// Function to update the linked list for a given topic
+void update_topic(const std::string &topic, const std::string &value)
+{
+    std::lock_guard<std::mutex> lock(table_mutex);
+    auto &list = topic_table[topic]; // Get the list for the topic (create if not exists)
+    list.push_front(value);          // Insert the new value at the head
+}
+
+// Function to clear the linked list for each topic
+void clear_topics()
+{
+    std::lock_guard<std::mutex> lock(table_mutex);
+    for (auto &pair : topic_table)
+    {
+        pair.second.clear(); // Clear each list
+    }
+}
 // Function to calculate a simple checksum
 uint16_t calculate_checksum(const Packet &packet)
 {
@@ -98,7 +120,7 @@ bool send_packet(int sock, const sockaddr_in &dest_addr, Packet &packet)
 bool create_and_send_packet(int sock, const sockaddr_in &dest_addr, uint32_t &seq_num,
                             const std::vector<std::string> &keys,
                             const std::vector<std::string> &values,
-                            const std::vector<uint8_t> &data_types)
+                            const std::vector<uint8_t> &data_types, const std::string &topic)
 {
     if (keys.size() != values.size() || keys.size() != data_types.size())
     {
@@ -114,7 +136,8 @@ bool create_and_send_packet(int sock, const sockaddr_in &dest_addr, uint32_t &se
     packet.ack_num = 0;
 
     size_t offset = 0;
-
+    strncpy(packet.topic, topic.c_str(), sizeof(packet.topic));
+    packet.topic[sizeof(packet.topic) - 1] = '\0';
     // Prepare the payload
     for (size_t i = 0; i < keys.size(); ++i)
     {
@@ -151,7 +174,15 @@ bool create_and_send_packet(int sock, const sockaddr_in &dest_addr, uint32_t &se
     // Send the packet
     return send_packet(sock, dest_addr, packet);
 }
-
+void periodic_clear()
+{
+    while (true)
+    {
+        std::this_thread::sleep_for(std::chrono::hours(1));
+        clear_topics();
+        std::cout << "Cleared all topics' linked lists" << std::endl;
+    }
+}
 // Function to receive packets in a separate thread
 void receive_packets(int sock, uint32_t &expected_seq_num)
 {
@@ -173,7 +204,9 @@ void receive_packets(int sock, uint32_t &expected_seq_num)
             char src_ip[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &recvAddr.sin_addr, src_ip, INET_ADDRSTRLEN);
             std::cout << "Received valid packet from " << src_ip << ":" << ntohs(recvAddr.sin_port) << std::endl;
-
+            std::string topic(recvPacket.topic);
+            std::string value(recvPacket.payload, recvPacket.payload_length);
+            update_topic(topic, value);
             // Handle payload
             size_t offset = 0;
             while (offset < recvPacket.payload_length)
@@ -267,7 +300,7 @@ int main()
     // Start the thread for receiving packets
     uint32_t expected_seq_num = 0;
     std::thread recv_thread(receive_packets, sock, std::ref(expected_seq_num));
-
+    std::thread clear_thread(periodic_clear);
     // Sequence number for outgoing packets
     uint32_t seq_num = 0;
 
@@ -277,9 +310,9 @@ int main()
         std::vector<std::string> keys = {"key1", "key2"};
         std::vector<std::string> values = {"value1", "value2"};
         std::vector<uint8_t> data_types = {1, 2}; // Example data types
-
+        std::string topic = "topic2";
         // Create and send the packet
-        if (!create_and_send_packet(sock, sendAddr, seq_num, keys, values, data_types))
+        if (!create_and_send_packet(sock, sendAddr, seq_num, keys, values, data_types, topic))
         {
             std::cerr << "Error creating or sending packet, retrying..." << std::endl;
             continue; // Retry sending the packet
