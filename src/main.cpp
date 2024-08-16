@@ -30,7 +30,7 @@ int main()
     // Set up the address for sending and receiving
     sockaddr_in addr;
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(54001);
+    addr.sin_port = htons(54000);
     inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 
     // Bind the socket to the port
@@ -44,7 +44,7 @@ int main()
     // Set up the address structure for sending messages
     sockaddr_in sendAddr;
     sendAddr.sin_family = AF_INET;
-    sendAddr.sin_port = htons(54000); // Use a different port for sending
+    sendAddr.sin_port = htons(54001); // Use a different port for sending
     inet_pton(AF_INET, "127.0.0.1", &sendAddr.sin_addr);
 
     // Start the thread for receiving packets
