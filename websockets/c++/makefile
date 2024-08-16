@@ -1,24 +1,33 @@
-# Makefile
-
+# Compiler and flags
 CXX = g++
-CXXFLAGS = -std=c++17 -Iinclude -I/opt/homebrew/include  # Add paths to include folders
+CXXFLAGS = -std=c++17 -Wall -Iinclude -I/opt/homebrew/include  # Add paths to include folders
 
-# Source files
-SRC = src/main.cpp src/server.cpp
+# Directories
+SRCDIR = src
+INCDIR = include
+OBJDIR = obj
 
-# Object files
-OBJ = $(SRC:.cpp=.o)
+# Source files and object files
+SOURCES := $(wildcard $(SRCDIR)/*.cpp)
+OBJECTS := $(patsubst $(SRCDIR)/%.cpp, $(OBJDIR)/%.o, $(SOURCES))
 
-# Executable
+# Executable target
 TARGET = server
 
-all: $(TARGET)
+# Build the executable
+$(TARGET): $(OBJECTS)
+	$(CXX) $(CXXFLAGS) -o $@ $^
 
-$(TARGET): $(OBJ)
-	$(CXX) $(CXXFLAGS) -o $(TARGET) $(OBJ)
+# Build object files
+$(OBJDIR)/%.o: $(SRCDIR)/%.cpp | $(OBJDIR)
+	$(CXX) $(CXXFLAGS) -I$(INCDIR) -c $< -o $@
 
-%.o: %.cpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+# Create the object directory if it doesn't exist
+$(OBJDIR):
+	mkdir -p $(OBJDIR)
 
+# Clean up build files
 clean:
-	rm -f $(TARGET) $(OBJ)
+	rm -rf $(OBJDIR) $(TARGET)
+
+.PHONY: clean

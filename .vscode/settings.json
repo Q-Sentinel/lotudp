@@ -57,6 +57,7 @@
         "deque": "cpp",
         "queue": "cpp",
         "thread": "cpp",
-        "list": "cpp"
+        "list": "cpp",
+        "fstream": "cpp"
     }
 }

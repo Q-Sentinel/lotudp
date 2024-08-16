@@ -37,7 +37,7 @@ int main()
     if (bind(sock, (sockaddr *)&addr, sizeof(addr)) < 0)
     {
         std::cerr << "Error binding socket" << std::endl;
-        close(sock);
+        ::close(sock);
         return 1;
     }
 
