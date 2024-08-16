@@ -1,14 +1,12 @@
 #include "packet.h"
-
+#include <iostream>
 uint16_t calculate_checksum(const Packet &packet)
 {
+    std::cout << "Calculating checksum" << std::endl;
     uint16_t sum = 0;
     sum += packet.version;
     sum += packet.type;
-    sum += packet.seq_num & 0xFFFF;
-    sum += (packet.seq_num >> 16) & 0xFFFF;
-    sum += packet.ack_num & 0xFFFF;
-    sum += (packet.ack_num >> 16) & 0xFFFF;
+
     sum += packet.payload_length;
     sum += packet.flags;
     for (size_t i = 0; i < sizeof(packet.topic); ++i)
@@ -19,5 +17,6 @@ uint16_t calculate_checksum(const Packet &packet)
     {
         sum += packet.payload[i];
     }
-    return ~sum;
+    std::cout << "Checksum calculated" << static_cast<uint16_t>(~sum) << std::endl;
+    return static_cast<uint16_t>(~sum);
 }

@@ -15,7 +15,7 @@ struct Packet
     uint16_t checksum;
     char topic[32];
     char payload[1024];
-};
+} __attribute__((packed));
 
 uint16_t calculate_checksum(const Packet &packet);
 

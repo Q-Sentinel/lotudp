@@ -127,22 +127,46 @@ void receive_packets(int sock, uint32_t &expected_seq_num)
             std::cerr << "Error receiving data" << std::endl;
             continue;
         }
-
+        // if (bytesReceived > 0)
+        // {
+        //     std::cout << "Received " << bytesReceived << " bytes" << std::endl;
+        // }
         // Check the checksum of the received packet
-        if (recvPacket.checksum == calculate_checksum(recvPacket))
+
+        // if (recvPacket.checksum == calculate_checksum(recvPacket))
+        if (bytesReceived > 0)
         {
+            // std::cout << "Received packet with payload: " << recvPacket.payload << std::endl;
             char src_ip[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &recvAddr.sin_addr, src_ip, INET_ADDRSTRLEN);
             std::cout << "Received valid packet from " << src_ip << ":" << ntohs(recvAddr.sin_port) << std::endl;
+
+            // recvPacket.topic[sizeof(recvPacket.topic) - 1] = '\0';
+            // std::cout << "Topic: " << recvPacket.topic << std::endl;
+            // std::cout << "Payload length: " << recvPacket.payload_length << std::endl;
+
+            // for (size_t i = 0; i < recvPacket.payload_length; ++i)
+            // {
+            //     std::cout << "Byte " << i << ": " << std::hex << static_cast<int>(recvPacket.payload[i]) << std::endl;
+            // }
+
+            // if (recvPacket.payload_length > sizeof(recvPacket.payload))
+            // {
+            //     std::cerr << "Payload length exceeds buffer size!" << std::endl;
+            //     continue;
+            // }
+
             std::string topic(recvPacket.topic);
             std::string value(recvPacket.payload, recvPacket.payload_length);
 
             // Handle payload
             size_t offset = 0;
             std::stringstream result;
+            std::cout << "1" << std::endl;
             while (offset < recvPacket.payload_length)
             {
                 // Extract key (first 8 bytes)
+                std::cout << "2" << std::endl;
                 char key[8] = {0};
                 std::memcpy(key, recvPacket.payload + offset, 8);
 
