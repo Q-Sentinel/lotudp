@@ -188,7 +188,15 @@ void receive_packets(int sock, uint32_t &expected_seq_num)
                 {
                     result << ", ";
                 }
-
+                if (strcmp(key, "time") == 0)
+                {
+                    std::cout << "cmp works: " << key << std::endl;
+                    int current_time = time(NULL);
+                    int time = atoi(value.c_str());
+                    std::cout << "Current time: " << current_time << std::endl;
+                    std::cout << "Time: " << time << std::endl;
+                    std::cout << "Time difference: " << current_time - time << std::endl;
+                }
                 std::cout << "Payload details:" << std::endl;
                 std::cout << "Key: " << key << std::endl;
                 std::cout << "Value: " << value << std::endl;
